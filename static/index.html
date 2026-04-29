@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TumorEvo — Drug Resistance Simulator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&family=Barlow+Condensed:wght@600;700;800&family=Barlow:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<div id="spinner-overlay" aria-live="polite" aria-label="Loading">
+  <div class="spinner-box">
+    <div class="spinner-ring"></div>
+    <span id="spinner-msg">solving odes…</span>
+  </div>
+</div>
+
+<header>
+  <div class="header-title">
+    <span class="title-main">TUMOREVO</span>
+    <span class="title-sep">/</span>
+    <span class="title-sub">drug resistance dynamics</span>
+  </div>
+  <div class="header-meta">
+    <span class="mono" id="header-status">ready</span>
+    <span class="mono muted">RK4 · 200 days · Δt = 0.1</span>
+  </div>
+</header>
+
+<div id="warn-bar" role="alert" hidden>
+  <span id="warn-text"></span>
+</div>
+
+<main>
+  <aside id="controls">
+
+    <section class="ctrl-group">
+      <h2>DOSING SCHEDULE</h2>
+      <div class="sched-grid">
+        <button class="sched-btn active" data-sched="continuous">
+          <span class="sched-name">CONTINUOUS</span>
+          <span class="sched-desc">30% dose · constant</span>
+        </button>
+        <button class="sched-btn" data-sched="pulsed">
+          <span class="sched-name">PULSED</span>
+          <span class="sched-desc">100% · q7d × 1d</span>
+        </button>
+        <button class="sched-btn" data-sched="metronomic">
+          <span class="sched-name">METRONOMIC</span>
+          <span class="sched-desc">40% · q2.3d × 0.5d</span>
+        </button>
+        <button class="sched-btn" data-sched="escalating">
+          <span class="sched-name">ESCALATING</span>
+          <span class="sched-desc">50%→150% / 100d</span>
+        </button>
+      </div>
+    </section>
+
+    <section class="ctrl-group">
+      <h2>PARAMETERS</h2>
+
+      <div class="param-row">
+        <div class="param-meta">
+          <label for="sl-r">Proliferation rate <em>r</em></label>
+          <output id="val-r" class="mono">0.30 /d</output>
+        </div>
+        <input type="range" id="sl-r" min="0.1" max="0.8" step="0.01" value="0.3"
+               aria-label="Proliferation rate">
+      </div>
+
+      <div class="param-row">
+        <div class="param-meta">
+          <label for="sl-mu">Mutation rate log₁₀(μ)</label>
+          <output id="val-mu" class="mono">1e-6</output>
+        </div>
+        <input type="range" id="sl-mu" min="-8" max="-4" step="0.2" value="-6"
+               aria-label="Mutation rate log10">
+      </div>
+
+      <div class="param-row">
+        <div class="param-meta">
+          <label for="sl-kill">Kill efficiency</label>
+          <output id="val-kill" class="mono">80%</output>
+        </div>
+        <input type="range" id="sl-kill" min="50" max="100" step="1" value="80"
+               aria-label="Drug kill efficiency">
+      </div>
+
+      <div class="param-row">
+        <div class="param-meta">
+          <label for="sl-start">Treatment start</label>
+          <output id="val-start" class="mono">day 0</output>
+        </div>
+        <input type="range" id="sl-start" min="0" max="120" step="5" value="0"
+               aria-label="Treatment start day">
+      </div>
+    </section>
+
+    <section class="ctrl-group">
+      <h2>CELL POPULATIONS</h2>
+      <div class="legend">
+        <div class="legend-item"><span class="dot" data-pop="S"></span><span class="mono">S</span> sensitive</div>
+        <div class="legend-item"><span class="dot" data-pop="RA"></span><span class="mono">R<sub>A</sub></span> drug-A resistant</div>
+        <div class="legend-item"><span class="dot" data-pop="RB"></span><span class="mono">R<sub>B</sub></span> drug-B resistant</div>
+        <div class="legend-item"><span class="dot" data-pop="RAB"></span><span class="mono">R<sub>AB</sub></span> fully resistant</div>
+      </div>
+    </section>
+
+    <section class="ctrl-group">
+      <h2>ACTIONS</h2>
+      <div class="action-row">
+        <button id="btn-run" class="btn btn-run">RUN</button>
+        <button id="btn-reset" class="btn btn-reset">RESET</button>
+      </div>
+      <div class="action-row">
+        <button id="btn-anim" class="btn btn-anim">ANIMATE</button>
+        <button id="btn-csv" class="btn btn-csv">EXPORT CSV</button>
+      </div>
+      <div id="anim-bar-wrap" hidden>
+        <div id="anim-bar-fill"></div>
+      </div>
+    </section>
+
+    <section class="ctrl-group">
+      <h2>LIVE STATS</h2>
+      <table class="stats-table">
+        <tr><td>peak burden</td><td class="mono" id="stat-peak">—</td></tr>
+        <tr><td>final burden</td><td class="mono" id="stat-final">—</td></tr>
+        <tr><td>max toxicity</td><td class="mono" id="stat-tox">—</td></tr>
+        <tr><td>relapse day</td><td class="mono" id="stat-relapse">—</td></tr>
+      </table>
+    </section>
+
+  </aside>
+
+  <div id="chart-area">
+
+    <div class="chart-panel" id="panel-burden">
+      <div class="panel-header">
+        <span class="panel-title">TUMOR BURDEN</span>
+        <span class="panel-note mono">linear + log₁₀ · N = S + R<sub>A</sub> + R<sub>B</sub> + R<sub>AB</sub></span>
+      </div>
+      <div class="chart-box" id="chart-burden"></div>
+    </div>
+
+    <div class="chart-panel" id="panel-fractions">
+      <div class="panel-header">
+        <span class="panel-title">POPULATION FRACTIONS</span>
+        <span class="panel-note mono">normalised to 100% · stacked area</span>
+      </div>
+      <div class="chart-box" id="chart-fractions"></div>
+    </div>
+
+    <div class="chart-panel" id="panel-toxicity">
+      <div class="panel-header">
+        <span class="panel-title">CUMULATIVE TOXICITY</span>
+        <span class="panel-note mono">0–100 · danger threshold at 80</span>
+      </div>
+      <div class="chart-box" id="chart-toxicity"></div>
+    </div>
+
+    <div class="chart-panel" id="panel-spatial">
+      <div class="panel-header">
+        <span class="panel-title">SPATIAL TUMOUR MAP</span>
+        <span class="panel-note mono">50×50 cell grid · colour = mutation state</span>
+      </div>
+      <div class="spatial-wrap">
+        <canvas id="spatial-canvas" width="500" height="500" aria-label="Spatial tumour map"></canvas>
+        <div id="spatial-overlay">
+          <span id="spatial-day" class="mono">day 0</span>
+          <span id="spatial-dose" class="mono dose-off">no treatment</span>
+        </div>
+        <div id="spatial-legend">
+          <span class="sp-leg"><span class="sp-dot" style="background:#1B3D8F"></span>S</span>
+          <span class="sp-leg"><span class="sp-dot" style="background:#B03A2E"></span>R<sub>A</sub></span>
+          <span class="sp-leg"><span class="sp-dot" style="background:#1B6B3A"></span>R<sub>B</sub></span>
+          <span class="sp-leg"><span class="sp-dot" style="background:#C47A00"></span>R<sub>AB</sub></span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<section id="clinical">
+  <div class="clinical-row">
+    <div class="clinical-outcome">
+      <span class="outcome-label">OUTCOME</span>
+      <span id="outcome-badge" class="outcome-badge controlled">CONTROLLED</span>
+    </div>
+    <div class="clinical-metrics">
+      <div class="clin-metric">
+        <span class="clin-label">Time to Relapse</span>
+        <span class="clin-val mono" id="clin-relapse">N/A</span>
+      </div>
+      <div class="clin-metric">
+        <span class="clin-label">Max Toxicity</span>
+        <span class="clin-val mono" id="clin-tox">—</span>
+      </div>
+      <div class="clin-metric">
+        <span class="clin-label">Therapeutic Index</span>
+        <span class="clin-val mono" id="clin-ti">—</span>
+      </div>
+    </div>
+    <div class="clinical-rec">
+      <span class="rec-label">RECOMMENDATION</span>
+      <p id="rec-text">Run the simulation to receive a recommendation.</p>
+    </div>
+  </div>
+</section>
+
+<section id="references">
+  <button id="ref-btn" aria-expanded="false">
+    LITERATURE &amp; CITATIONS
+    <span class="ref-arrow">▸</span>
+  </button>
+  <div id="ref-body" hidden>
+
+    <div class="ref-grid">
+      <article class="ref-card">
+        <div class="ref-id">[1]</div>
+        <div class="ref-content">
+          <div class="ref-tag">MUTATION THEORY</div>
+          <p class="ref-cite">Goldie J.H. &amp; Coldman A.J. (1979). A mathematic model for relating the drug sensitivity of tumors to their spontaneous mutation rate. <em>Cancer Treatment Reports</em>, 63(11–12), 1727–1733. PMID: 534763</p>
+          <p class="ref-insight">Probability of resistance increases exponentially with tumour size and division number — the justification for early, aggressive combination therapy. <strong>Model link:</strong> The μ_A·r·S and μ_B·r·S mutation terms are a direct deterministic implementation of the Goldie-Coldman stochastic model.</p>
+        </div>
+      </article>
+
+      <article class="ref-card">
+        <div class="ref-id">[2]</div>
+        <div class="ref-content">
+          <div class="ref-tag">DOSE INTENSITY</div>
+          <p class="ref-cite">Norton L. &amp; Simon R. (1986). The Norton-Simon hypothesis revisited. <em>Cancer Treatment Reports</em>, 70(1), 163–169. PMID: 3753108</p>
+          <p class="ref-insight">Tumour regression rate is proportional to growth rate — dose intensity must match tumour aggressiveness. <strong>Model link:</strong> Varying the proliferation rate slider against different schedules directly demonstrates this: high <em>r</em> requires higher dose intensity to achieve net negative growth.</p>
+        </div>
+      </article>
+
+      <article class="ref-card">
+        <div class="ref-id">[3]</div>
+        <div class="ref-content">
+          <div class="ref-tag">CML DYNAMICS</div>
+          <p class="ref-cite">Michor F., et al. (2005). Dynamics of chronic myeloid leukemia. <em>Nature</em>, 435(7046), 1267–1270. DOI: 10.1038/nature03513</p>
+          <p class="ref-insight">Cancer stem cell hierarchy alters resistance evolution — imatinib induces remission but may not eradicate CML stem cells. <strong>Model link:</strong> The 0.95/0.90 fitness cost parameters on R_A, R_B, and R_AB approximate the reduced proliferative capacity of resistant clones from this hierarchical framework.</p>
+        </div>
+      </article>
+
+      <article class="ref-card">
+        <div class="ref-id">[4]</div>
+        <div class="ref-content">
+          <div class="ref-tag">ADAPTIVE THERAPY</div>
+          <p class="ref-cite">Gatenby R.A. &amp; Brown J.S. (2020). The evolution and ecology of resistance in cancer therapy. <em>Cold Spring Harbor Perspectives in Medicine</em>, 10(11), a040972. DOI: 10.1101/cshperspect.a040972</p>
+          <p class="ref-insight">Maximum tolerated doses select strongly for resistance; maintaining sensitive cells competitively suppresses resistant subclones. <strong>Model link:</strong> The shared logistic carrying capacity term (1 − N/K) encodes exactly this competitive suppression dynamic.</p>
+        </div>
+      </article>
+
+      <article class="ref-card" style="grid-column:1/-1">
+        <div class="ref-id">[5]</div>
+        <div class="ref-content">
+          <div class="ref-tag">DOSE OPTIMISATION</div>
+          <p class="ref-cite">Okereke I., et al. (2025). Dose intensity optimization in combination chemotherapy. <em>Journal of Theoretical Biology</em>, 598, 112042. DOI: 10.1016/j.jtbi.2025.112042</p>
+          <p class="ref-insight">Therapeutic index is maximised by metronomic scheduling at intermediate mutation rates. <strong>Model link:</strong> The TI comparison chart in panel 4 directly implements the TI = (1/mean_tumour) / (toxicity+1) metric from this paper.</p>
+        </div>
+      </article>
+    </div>
+
+    <div class="further-reading">
+      <h3>FURTHER READING</h3>
+      <ul>
+        <li>Foo J. &amp; Michor F. (2014). Evolution of acquired resistance to anti-cancer therapy. <em>J Theor Biol</em>, 355, 10–20.</li>
+        <li>Gatenby R.A., et al. (2009). Adaptive Therapy. <em>Cancer Research</em>, 69(11), 4894–4903.</li>
+        <li>Enderling H. &amp; Chaplain M.A.J. (2014). Mathematical modeling of tumor growth and treatment. <em>Curr Pharm Des</em>, 20(30), 4934–4940.</li>
+        <li>Komarova N.L. &amp; Wodarz D. (2005). Drug resistance in cancer: principles of emergence and prevention. <em>PNAS</em>, 102(27), 9714–9719.</li>
+        <li>West J., et al. (2020). Towards multidrug adaptive therapy. <em>Cancer Research</em>, 80(7), 1578–1589.</li>
+      </ul>
+    </div>
+
+  </div>
+</section>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
