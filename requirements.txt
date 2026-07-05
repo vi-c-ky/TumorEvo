@@ -1,2 +1,5 @@
-flask>=3.0
-numpy>=1.26
+flask==3.0.3
+numpy==1.26.4
+scipy==1.14.1
+lifelines==0.29.0
+gunicorn==21.2.0

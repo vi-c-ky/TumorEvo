@@ -1,4 +1,6 @@
-# README
+**Live demo:** https://tumorevo.onrender.com
+> First visit may take 30 seconds to wake up (free tier).
+
 # TumorEvo — Drug Resistance Simulator
 
 ## Setup

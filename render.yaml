@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: tumorevo
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --workers 2 --timeout 60
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.0
