@@ -661,3 +661,168 @@ function showWarn(msg) {
 // ── Init ──────────────────────────────────────────────────────────
 readParams();
 runAll();
+
+// ── Virtual Trial ─────────────────────────────────────────────────
+(function () {
+  const TRIAL_COLORS = {
+    continuous: "#1B3D8F",
+    pulsed:     "#B03A2E",
+    metronomic: "#1B6B3A",
+    escalating: "#9A6B00",
+    control:    "#777777",
+  };
+  const TRIAL_LABELS = {
+    continuous: "Continuous",
+    pulsed:     "Pulsed",
+    metronomic: "Metronomic",
+    escalating: "Escalating",
+    control:    "Control",
+  };
+
+  const slN    = el("trial-n");
+  const outN   = el("trial-n-val");
+  const btnRun = el("btn-trial");
+
+  slN.addEventListener("input", () => { outN.value = slN.value; });
+
+  btnRun.addEventListener("click", runTrial);
+
+  async function runTrial() {
+    const arms = [...document.querySelectorAll('input[name="arm"]:checked')]
+      .map(cb => cb.value);
+    if (arms.length === 0) {
+      showWarn("Select at least one treatment arm.");
+      return;
+    }
+
+    const heterogeneity = parseFloat(
+      document.querySelector('input[name="heterogeneity"]:checked').value
+    );
+    const nPatients = parseInt(slN.value, 10);
+
+    btnRun.textContent = "RUNNING…";
+    btnRun.disabled    = true;
+
+    try {
+      const resp = await fetch("/run_trial", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ n_patients: nPatients, arms, heterogeneity }),
+      });
+      if (!resp.ok) {
+        const e = await resp.json();
+        throw new Error(e.error || "Trial failed");
+      }
+      const data = await resp.json();
+      renderTrialResults(data);
+    } catch (err) {
+      showWarn("Trial error: " + err.message);
+      console.error(err);
+    } finally {
+      btnRun.textContent = "RUN TRIAL";
+      btnRun.disabled    = false;
+    }
+  }
+
+  function renderTrialResults(data) {
+    el("trial-placeholder").setAttribute("hidden", "");
+    el("trial-content").removeAttribute("hidden");
+
+    const armNames = Object.keys(data.arms);
+    const traces   = [];
+
+    armNames.forEach(arm => {
+      const d     = data.arms[arm];
+      const color = TRIAL_COLORS[arm] || "#444444";
+      const label = TRIAL_LABELS[arm] || arm;
+
+      // CI upper bound (invisible line; fill uses this as ceiling)
+      traces.push({
+        x:          d.km_times,
+        y:          d.km_ci_upper,
+        mode:       "lines",
+        line:       { width: 0, shape: "hv" },
+        showlegend: false,
+        hoverinfo:  "none",
+        name:       arm + "_ci_upper",
+      });
+      // CI lower bound fills up to the upper trace
+      traces.push({
+        x:         d.km_times,
+        y:         d.km_ci_lower,
+        mode:      "lines",
+        fill:      "tonexty",
+        fillcolor: color + "28",
+        line:      { width: 0, shape: "hv" },
+        showlegend: false,
+        hoverinfo: "none",
+        name:      arm + "_ci_lower",
+      });
+      // KM survival step line
+      traces.push({
+        x:             d.km_times,
+        y:             d.km_survival,
+        mode:          "lines",
+        line:          { color, width: 2, shape: "hv" },
+        name:          label,
+        hovertemplate: `day %{x:.0f}<br>S(t)=%{y:.3f}<extra>${label}</extra>`,
+      });
+    });
+
+    // P-value annotations (upper-right corner)
+    const annotations = [];
+    let annotY = 0.98;
+    Object.entries(data.pairwise_logrank || {}).forEach(([key, val]) => {
+      if (!val) return;
+      const pairLabel = key.replace(/_vs_/g, " vs ");
+      annotations.push({
+        x:         0.99,
+        y:         annotY,
+        xref:      "paper",
+        yref:      "paper",
+        text:      `${pairLabel}: p=${val.p_value.toFixed(3)}${val.significant ? " *" : ""}`,
+        showarrow: false,
+        align:     "right",
+        font: {
+          family: "IBM Plex Mono",
+          size:   9,
+          color:  val.significant ? "#B03A2E" : "#888888",
+        },
+      });
+      annotY -= 0.07;
+    });
+
+    const kmLayout = {
+      ...BASE_LAYOUT,
+      margin:      { l: 52, r: 14, t: 8, b: 36 },
+      xaxis:       { ...BASE_LAYOUT.xaxis, title: { text: "day", standoff: 6 } },
+      yaxis:       { ...BASE_LAYOUT.yaxis, range: [0, 1.05],
+                     title: { text: "S(t)", standoff: 4 } },
+      legend:      { orientation: "h", y: -0.22, font: { size: 9 } },
+      annotations,
+    };
+
+    Plotly.react("chart-km", traces, kmLayout, PLOTLY_CONFIG);
+
+    // Summary table
+    const tbody = el("trial-tbody");
+    tbody.innerHTML = "";
+    armNames.forEach(arm => {
+      const d     = data.arms[arm];
+      const color = TRIAL_COLORS[arm] || "#444444";
+      const label = TRIAL_LABELS[arm] || arm;
+      const tr = document.createElement("tr");
+      const td1 = document.createElement("td");
+      td1.innerHTML =
+        `<span class="trial-arm-cell">` +
+        `<span class="trial-arm-dot" style="background:${color}"></span>` +
+        `${label}</span>`;
+      const td2 = document.createElement("td"); td2.className = "mono"; td2.textContent = d.median_pfs;
+      const td3 = document.createElement("td"); td3.className = "mono"; td3.textContent = d.pct_complete_response + "%";
+      const td4 = document.createElement("td"); td4.className = "mono"; td4.textContent = d.pct_resistant + "%";
+      const td5 = document.createElement("td"); td5.className = "mono"; td5.textContent = d.n;
+      tr.append(td1, td2, td3, td4, td5);
+      tbody.appendChild(tr);
+    });
+  }
+})();

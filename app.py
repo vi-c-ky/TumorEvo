@@ -15,8 +15,10 @@ import json
 from flask import Flask, jsonify, request, send_from_directory, Response
 
 from solver import SCHEDULES, run_simulation, compute_metrics
+from trial import trial_bp
 
 app = Flask(__name__, static_folder="static")
+app.register_blueprint(trial_bp)
 
 
 # ── Static files ──────────────────────────────────────────────────

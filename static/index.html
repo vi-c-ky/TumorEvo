@@ -212,6 +212,85 @@
   </div>
 </section>
 
+<section id="trial">
+  <div class="trial-header">
+    <span class="panel-title">VIRTUAL TRIAL SIMULATOR</span>
+    <span class="panel-note mono">population heterogeneity · Kaplan-Meier · log-rank</span>
+  </div>
+  <div class="trial-layout">
+
+    <aside id="trial-controls">
+
+      <div class="ctrl-group">
+        <h2>COHORT</h2>
+        <div class="param-row">
+          <div class="param-meta">
+            <label for="trial-n">Patients per arm</label>
+            <output id="trial-n-val" class="mono">200</output>
+          </div>
+          <input type="range" id="trial-n" min="50" max="500" step="10" value="200"
+                 aria-label="Patients per arm">
+        </div>
+      </div>
+
+      <div class="ctrl-group">
+        <h2>TREATMENT ARMS</h2>
+        <div class="trial-checks">
+          <label class="trial-check"><input type="checkbox" name="arm" value="continuous" checked> Continuous</label>
+          <label class="trial-check"><input type="checkbox" name="arm" value="pulsed" checked> Pulsed</label>
+          <label class="trial-check"><input type="checkbox" name="arm" value="metronomic"> Metronomic</label>
+          <label class="trial-check"><input type="checkbox" name="arm" value="escalating"> Escalating</label>
+          <label class="trial-check"><input type="checkbox" name="arm" value="control" checked> Control (no drug)</label>
+        </div>
+      </div>
+
+      <div class="ctrl-group">
+        <h2>HETEROGENEITY</h2>
+        <div class="trial-radios">
+          <label class="trial-radio"><input type="radio" name="heterogeneity" value="0.1"> <span>Low</span> <span class="mono muted">σ = 0.10</span></label>
+          <label class="trial-radio"><input type="radio" name="heterogeneity" value="0.2" checked> <span>Medium</span> <span class="mono muted">σ = 0.20</span></label>
+          <label class="trial-radio"><input type="radio" name="heterogeneity" value="0.35"> <span>High</span> <span class="mono muted">σ = 0.35</span></label>
+        </div>
+      </div>
+
+      <div class="ctrl-group">
+        <button id="btn-trial" class="btn btn-run trial-run-btn">RUN TRIAL</button>
+      </div>
+
+    </aside>
+
+    <div id="trial-results">
+      <div id="trial-placeholder" class="trial-placeholder">
+        <span class="mono muted">Configure arms and click RUN TRIAL</span>
+      </div>
+      <div id="trial-content" hidden>
+        <div class="chart-panel trial-km-panel">
+          <div class="panel-header">
+            <span class="panel-title">KAPLAN-MEIER: PROGRESSION-FREE SURVIVAL</span>
+            <span class="panel-note mono">shaded = 95% CI (Greenwood) · * p &lt; 0.05</span>
+          </div>
+          <div class="chart-box" id="chart-km"></div>
+        </div>
+        <div id="trial-table-wrap">
+          <table class="trial-table" id="trial-table">
+            <thead>
+              <tr>
+                <th>Arm</th>
+                <th>Median PFS (days)</th>
+                <th>Complete Response %</th>
+                <th>Resistant %</th>
+                <th>N</th>
+              </tr>
+            </thead>
+            <tbody id="trial-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
 <section id="references">
   <button id="ref-btn" aria-expanded="false">
     LITERATURE &amp; CITATIONS
